@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Currency AI — Banknote Recognition</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #C9A84C;
+    --gold-light: #E8C97A;
+    --dark: #0A0A0A;
+    --dark-2: #111111;
+    --dark-3: #1A1A1A;
+    --dark-4: #222222;
+    --text: #F0EDE6;
+    --text-muted: #888880;
+    --accent: #C9A84C;
+    --success: #4CAF82;
+    --border: rgba(201, 168, 76, 0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--dark);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background texture */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      radial-gradient(ellipse at 20% 20%, rgba(201,168,76,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, rgba(201,168,76,0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Grid lines */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(201,168,76,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201,168,76,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Header */
+  header {
+    padding: 48px 0 0;
+    text-align: center;
+    position: relative;
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid var(--border);
+    padding: 6px 16px;
+    margin-bottom: 28px;
+    position: relative;
+    animation: fadeDown 0.6s ease forwards;
+  }
+
+  .badge::before, .badge::after {
+    content: '◆';
+    margin: 0 8px;
+    font-size: 6px;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(42px, 8vw, 80px);
+    font-weight: 900;
+    line-height: 0.95;
+    letter-spacing: -0.02em;
+    margin-bottom: 20px;
+    animation: fadeDown 0.6s 0.1s ease both;
+  }
+
+  h1 span {
+    display: block;
+    color: var(--gold);
+    font-style: italic;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 60px;
+    animation: fadeDown 0.6s 0.2s ease both;
+  }
+
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 48px;
+    animation: fadeDown 0.6s 0.3s ease both;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity: 0.4;
+  }
+
+  .divider span {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+    text-transform: uppercase;
+  }
+
+  /* Upload Zone */
+  .upload-zone {
+    border: 1px solid var(--border);
+    background: var(--dark-2);
+    padding: 60px 40px;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.3s ease;
+    animation: fadeUp 0.6s 0.4s ease both;
+    overflow: hidden;
+  }
+
+  .upload-zone::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(201,168,76,0.05) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .upload-zone:hover::before { opacity: 1; }
+
+  .upload-zone:hover {
+    border-color: rgba(201,168,76,0.5);
+    background: var(--dark-3);
+  }
+
+  .upload-zone.dragging {
+    border-color: var(--gold);
+    background: var(--dark-3);
+  }
+
+  .upload-zone.dragging::before { opacity: 1; }
+
+  /* Corner decorations */
+  .corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--gold);
+    border-style: solid;
+    opacity: 0.6;
+  }
+  .corner.tl { top: 12px; left: 12px; border-width: 1px 0 0 1px; }
+  .corner.tr { top: 12px; right: 12px; border-width: 1px 1px 0 0; }
+  .corner.bl { bottom: 12px; left: 12px; border-width: 0 0 1px 1px; }
+  .corner.br { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+
+  .upload-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 20px;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--gold);
+    position: relative;
+  }
+
+  .upload-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .upload-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    margin-bottom: 24px;
+  }
+
+  .upload-btn {
+    display: inline-block;
+    background: var(--gold);
+    color: var(--dark);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 12px 32px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+
+  .upload-btn:hover {
+    background: var(--gold-light);
+    transform: translateY(-1px);
+  }
+
+  #fileInput { display: none; }
+
+  /* Preview */
+  .preview-container {
+    display: none;
+    margin-top: 24px;
+    position: relative;
+    animation: fadeUp 0.4s ease forwards;
+  }
+
+  .preview-container.show { display: block; }
+
+  .preview-image {
+    width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    background: var(--dark-3);
+  }
+
+  .preview-label {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: var(--dark);
+    border: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--gold);
+    padding: 4px 10px;
+    text-transform: uppercase;
+  }
+
+  /* Analyze Button */
+  .analyze-btn {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    padding: 18px;
+    cursor: pointer;
+    margin-top: 16px;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+    display: none;
+  }
+
+  .analyze-btn.show { display: block; }
+
+  .analyze-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--gold);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .analyze-btn:hover::before { transform: translateX(0); }
+  .analyze-btn:hover { color: var(--dark); }
+  .analyze-btn span { position: relative; z-index: 1; }
+
+  .analyze-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Loading */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px;
+    animation: fadeUp 0.3s ease forwards;
+  }
+
+  .loading.show { display: block; }
+
+  .loading-bar {
+    width: 100%;
+    height: 1px;
+    background: var(--dark-4);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .loading-bar::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -50%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    animation: loading 1s infinite linear;
+  }
+
+  @keyframes loading {
+    to { left: 150%; }
+  }
+
+  .loading-text {
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  /* Results */
+  .result-card {
+    display: none;
+    border: 1px solid var(--border);
+    background: var(--dark-2);
+    position: relative;
+    animation: fadeUp 0.5s ease forwards;
+    margin-top: 24px;
+    overflow: hidden;
+  }
+
+  .result-card.show { display: block; }
+
+  .result-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+
+  .result-header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .result-header-label {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+  }
+
+  .result-status {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--success);
+    text-transform: uppercase;
+  }
+
+  .result-status::before {
+    content: '●';
+    margin-right: 6px;
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .result-body {
+    padding: 40px 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+
+  .result-item label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .result-item .value {
+    font-family: 'Playfair Display', serif;
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1;
+  }
+
+  .result-item .value.currency-name {
+    font-size: 48px;
+  }
+
+  .confidence-bar {
+    margin-top: 8px;
+    height: 2px;
+    background: var(--dark-4);
+    position: relative;
+  }
+
+  .confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gold), var(--gold-light));
+    width: 0%;
+    transition: width 1s ease;
+  }
+
+  /* Currency flags/info */
+  .currency-info {
+    padding: 20px 28px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .currency-detail {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  .currency-detail strong {
+    color: var(--text);
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  /* Supported currencies */
+  .currencies-section {
+    margin-top: 60px;
+    animation: fadeUp 0.6s 0.5s ease both;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .currency-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .currency-tag {
+    border: 1px solid var(--border);
+    padding: 12px 8px;
+    text-align: center;
+    transition: all 0.2s;
+    cursor: default;
+  }
+
+  .currency-tag:hover {
+    border-color: rgba(201,168,76,0.4);
+    background: var(--dark-3);
+  }
+
+  .currency-tag .code {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gold);
+    display: block;
+    margin-bottom: 3px;
+  }
+
+  .currency-tag .name {
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 80px;
+    padding: 32px 0 48px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+
+  footer p {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+  }
+
+  footer span {
+    color: var(--gold);
+  }
+
+  /* Animations */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Error */
+  .error-msg {
+    display: none;
+    border: 1px solid rgba(255, 80, 80, 0.3);
+    background: rgba(255, 80, 80, 0.05);
+    padding: 16px 20px;
+    margin-top: 16px;
+    font-size: 11px;
+    color: #ff8080;
+    letter-spacing: 0.05em;
+    animation: fadeUp 0.3s ease forwards;
+  }
+
+  .error-msg.show { display: block; }
+
+  @media (max-width: 600px) {
+    .currency-grid { grid-template-columns: repeat(3, 1fr); }
+    .result-body { grid-template-columns: 1fr; gap: 20px; }
+    .result-item .value.currency-name { font-size: 36px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">AI-Powered Recognition</div>
+    <h1>Currency<span>Identifier</span></h1>
+    <p class="subtitle">Upload a banknote image — our AI identifies the currency instantly</p>
+  </header>
+
+  <div class="divider"><span>Upload</span></div>
+
+  <!-- Upload Zone -->
+  <div class="upload-zone" id="uploadZone">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <div class="upload-icon">💵</div>
+    <p class="upload-title">Drop your banknote here</p>
+    <p class="upload-sub">PNG, JPG, WEBP supported · Max 10MB</p>
+    <label for="fileInput" class="upload-btn">Choose File</label>
+    <input type="file" id="fileInput" accept="image/*">
+  </div>
+
+  <!-- Preview -->
+  <div class="preview-container" id="previewContainer">
+    <img id="previewImage" class="preview-image" src="" alt="Banknote preview">
+    <span class="preview-label">Preview</span>
+  </div>
+
+  <!-- Analyze Button -->
+  <button class="analyze-btn" id="analyzeBtn">
+    <span>◆ Analyze Banknote ◆</span>
+  </button>
+
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="loading-bar"></div>
+    <p class="loading-text">Analyzing banknote...</p>
+  </div>
+
+  <!-- Error -->
+  <div class="error-msg" id="errorMsg"></div>
+
+  <!-- Result -->
+  <div class="result-card" id="resultCard">
+    <div class="result-header">
+      <span class="result-header-label">Analysis Complete</span>
+      <span class="result-status">Verified</span>
+    </div>
+    <div class="result-body">
+      <div class="result-item">
+        <label>Currency Detected</label>
+        <div class="value currency-name" id="resultCurrency">—</div>
+      </div>
+      <div class="result-item">
+        <label>Confidence Score</label>
+        <div class="value" id="resultConfidence">—</div>
+        <div class="confidence-bar">
+          <div class="confidence-fill" id="confidenceFill"></div>
+        </div>
+      </div>
+    </div>
+    <div class="currency-info" id="currencyInfo">
+      <div class="currency-detail">
+        <strong id="currencyFullName">—</strong>
+        <span id="currencyCountry">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Supported Currencies -->
+  <div class="currencies-section">
+    <p class="section-label">Supported Currencies</p>
+    <div class="currency-grid">
+      <div class="currency-tag"><span class="code">USD</span><span class="name">US Dollar</span></div>
+      <div class="currency-tag"><span class="code">EUR</span><span class="name">Euro</span></div>
+      <div class="currency-tag"><span class="code">GBP</span><span class="name">Brit. Pound</span></div>
+      <div class="currency-tag"><span class="code">INR</span><span class="name">Indian Rupee</span></div>
+      <div class="currency-tag"><span class="code">JPY</span><span class="name">Japanese Yen</span></div>
+      <div class="currency-tag"><span class="code">AUD</span><span class="name">Aus. Dollar</span></div>
+      <div class="currency-tag"><span class="code">CAD</span><span class="name">Can. Dollar</span></div>
+      <div class="currency-tag"><span class="code">BRL</span><span class="name">Brazilian Real</span></div>
+      <div class="currency-tag"><span class="code">NZD</span><span class="name">NZ Dollar</span></div>
+      <div class="currency-tag"><span class="code">SGD</span><span class="name">Sing. Dollar</span></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Currency AI &nbsp;·&nbsp; <span>98.16% accuracy</span> &nbsp;·&nbsp; 10 currencies &nbsp;·&nbsp; Powered by PyTorch</p>
+  </footer>
+</div>
+
+<script>
+  const CURRENCY_INFO = {
+    USD: { name: 'United States Dollar', country: 'United States of America' },
+    EUR: { name: 'Euro', country: 'European Union' },
+    GBP: { name: 'British Pound Sterling', country: 'United Kingdom' },
+    INR: { name: 'Indian Rupee', country: 'Republic of India' },
+    JPY: { name: 'Japanese Yen', country: 'Japan' },
+    AUD: { name: 'Australian Dollar', country: 'Australia' },
+    CAD: { name: 'Canadian Dollar', country: 'Canada' },
+    BRL: { name: 'Brazilian Real', country: 'Brazil' },
+    NZD: { name: 'New Zealand Dollar', country: 'New Zealand' },
+    SGD: { name: 'Singapore Dollar', country: 'Singapore' },
+  };
+
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const previewContainer = document.getElementById('previewContainer');
+  const previewImage = document.getElementById('previewImage');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const loading = document.getElementById('loading');
+  const resultCard = document.getElementById('resultCard');
+  const errorMsg = document.getElementById('errorMsg');
+
+  let selectedFile = null;
+
+  // Drag and drop
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('dragging');
+  });
+
+  uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('dragging');
+  });
+
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragging');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) handleFile(file);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file) {
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      previewImage.src = e.target.result;
+      previewContainer.classList.add('show');
+      analyzeBtn.classList.add('show');
+      resultCard.classList.remove('show');
+      errorMsg.classList.remove('show');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    // Show loading
+    analyzeBtn.disabled = true;
+    loading.classList.add('show');
+    resultCard.classList.remove('show');
+    errorMsg.classList.remove('show');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const response = await fetch('http://127.0.0.1:8000/predict', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) throw new Error('Server error');
+
+      const data = await response.json();
+
+      // Show result
+      const currency = data.currency;
+      const confidence = parseFloat(data.confidence);
+      const info = CURRENCY_INFO[currency] || { name: currency, country: '' };
+
+      document.getElementById('resultCurrency').textContent = currency;
+      document.getElementById('resultConfidence').textContent = data.confidence;
+      document.getElementById('currencyFullName').textContent = info.name;
+      document.getElementById('currencyCountry').textContent = info.country;
+
+      resultCard.classList.add('show');
+
+      // Animate confidence bar
+      setTimeout(() => {
+        document.getElementById('confidenceFill').style.width = confidence + '%';
+      }, 100);
+
+    } catch (err) {
+      errorMsg.textContent = '⚠ Could not connect to API. Make sure the server is running on port 8000.';
+      errorMsg.classList.add('show');
+    } finally {
+      loading.classList.remove('show');
+      analyzeBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
